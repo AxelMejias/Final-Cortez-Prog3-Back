@@ -86,25 +86,29 @@ def create_fastapi_app() -> FastAPI:
     fastapi_app.include_router(health_check_controller, prefix="/health_check")
     fastapi_app.include_router(compat_router)
 
-    # Add middleware (LIFO order - last added runs first)
-    # Request ID middleware runs FIRST (innermost) to capture all logs
+    # Add middleware (LIFO order - last added runs first / outermost)
+    # 1) RequestID (innermost)
     fastapi_app.add_middleware(RequestIDMiddleware)
     logger.info("✅ Request ID middleware enabled (distributed tracing)")
 
-    # CORS Configuration
+    # 2) Rate limiting (middle)
+    fastapi_app.add_middleware(RateLimiterMiddleware, calls=100, period=60)
+    logger.info("✅ Rate limiting enabled: 100 requests/60s per IP")
+
+    # 3) CORS (outermost - added LAST so it wraps everything and always adds headers)
     cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
+    frontend_url = os.getenv("FRONTEND_URL", "")
+    if frontend_url and frontend_url not in cors_origins and cors_origins != ["*"]:
+        cors_origins.append(frontend_url)
     fastapi_app.add_middleware(
         CORSMiddleware,
         allow_origins=cors_origins if cors_origins != ["*"] else ["*"],
+        allow_origin_regex=r"https://.*\.vercel\.app",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    logger.info(f"✅ CORS enabled for origins: {cors_origins}")
-
-    # Rate limiting: 100 requests per 60 seconds per IP (configurable via env)
-    fastapi_app.add_middleware(RateLimiterMiddleware, calls=100, period=60)
-    logger.info("✅ Rate limiting enabled: 100 requests/60s per IP")
+    logger.info(f"✅ CORS enabled for origins: {cors_origins} + *.vercel.app regex")
 
     # Startup event: Check Redis connection
     @fastapi_app.on_event("startup")
