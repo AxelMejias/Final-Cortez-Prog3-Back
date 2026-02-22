@@ -44,3 +44,12 @@ redis_data/
 build/
 dist/
 *.egg-info/
+
+# SQLite database (use PostgreSQL in production)
+*.db
+
+# JSON data files (ephemeral, stored in DB now)
+data/product_media.json
+data/user_passwords.json
+data/reset_tokens.json
+data/favorites.json

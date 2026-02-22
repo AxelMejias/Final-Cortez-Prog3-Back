@@ -39,16 +39,6 @@ carts: Dict[str, List[Dict[str, Any]]] = {}
 favorites: Dict[str, List[Dict[str, Any]]] = {}
 bills: List[Dict[str, Any]] = []
 
-PASSWORDS_FILE = os.getenv(
-    "USER_PASSWORDS_FILE",
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "user_passwords.json")),
-)
-
-PRODUCT_MEDIA_FILE = os.getenv(
-    "PRODUCT_MEDIA_FILE",
-    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "product_media.json")),
-)
-
 RESET_TOKENS_FILE = os.getenv(
     "RESET_TOKENS_FILE",
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "reset_tokens.json")),
@@ -68,40 +58,6 @@ CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET", "")
 CLOUDINARY_UPLOAD_PRESET = os.getenv("CLOUDINARY_UPLOAD_PRESET", "")
 CLOUDINARY_FOLDER = os.getenv("CLOUDINARY_FOLDER", "libreria-emelyn/productos")
 CLOUDINARY_TIMEOUT = int(os.getenv("CLOUDINARY_TIMEOUT", "30"))
-
-
-def load_user_passwords() -> Dict[str, str]:
-    try:
-        if not os.path.exists(PASSWORDS_FILE):
-            return {}
-        with open(PASSWORDS_FILE, "r", encoding="utf-8") as file:
-            data = json.load(file)
-            return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
-
-
-def save_user_passwords(passwords: Dict[str, str]):
-    os.makedirs(os.path.dirname(PASSWORDS_FILE), exist_ok=True)
-    with open(PASSWORDS_FILE, "w", encoding="utf-8") as file:
-        json.dump(passwords, file, ensure_ascii=False, indent=2)
-
-
-def load_product_media() -> Dict[str, Dict[str, str]]:
-    try:
-        if not os.path.exists(PRODUCT_MEDIA_FILE):
-            return {}
-        with open(PRODUCT_MEDIA_FILE, "r", encoding="utf-8") as file:
-            data = json.load(file)
-            return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
-
-
-def save_product_media(media: Dict[str, Dict[str, str]]):
-    os.makedirs(os.path.dirname(PRODUCT_MEDIA_FILE), exist_ok=True)
-    with open(PRODUCT_MEDIA_FILE, "w", encoding="utf-8") as file:
-        json.dump(media, file, ensure_ascii=False, indent=2)
 
 
 def load_favorites() -> Dict[str, List[Dict[str, Any]]]:
@@ -138,9 +94,11 @@ def save_reset_tokens(tokens: Dict[str, Dict[str, Any]]):
         json.dump(tokens, file, ensure_ascii=False, indent=2)
 
 
-user_passwords: Dict[str, str] = load_user_passwords()
+# Reset tokens still in memory (short-lived by nature)
 reset_tokens: Dict[str, Dict[str, Any]] = load_reset_tokens()
-product_media: Dict[str, Dict[str, str]] = load_product_media()
+
+# Carts and favorites in memory (acceptable for MVP)
+carts: Dict[str, List[Dict[str, Any]]] = {}
 favorites = load_favorites()
 
 DEFAULT_PRODUCT_MEDIA = {
@@ -217,13 +175,17 @@ def verify_admin(x_admin_token: Optional[str] = Header(default=None)):
 
 def to_product_json(product: ProductModel) -> Dict[str, Any]:
     categoria = product.category.name if product.category else "Sin Categoría"
-    key = str(product.id_key)
-    media = product_media.get(key)
-    if not media:
-        media = DEFAULT_PRODUCT_MEDIA.get((product.name or "").strip().lower(), {})
 
-    image_url = media.get("imagen") if isinstance(media, dict) else None
-    description = media.get("descripcion") if isinstance(media, dict) else None
+    # Use DB columns directly; fall back to defaults for legacy data
+    image_url = product.image
+    description = product.description
+
+    if not image_url:
+        media = DEFAULT_PRODUCT_MEDIA.get((product.name or "").strip().lower(), {})
+        image_url = media.get("imagen") if isinstance(media, dict) else None
+    if not description:
+        media = DEFAULT_PRODUCT_MEDIA.get((product.name or "").strip().lower(), {})
+        description = media.get("descripcion") if isinstance(media, dict) else None
 
     return {
         "_id": str(product.id_key),
@@ -232,7 +194,7 @@ def to_product_json(product: ProductModel) -> Dict[str, Any]:
         "categoria": categoria,
         "precio": float(product.price or 0),
         "imagen": image_url or PLACEHOLDER_IMAGE,
-        "descripcion": description or f"Producto {product.name}",
+        "descripcion": description or f"Producto de calidad premium de nuestra librería Emelyn. Ideal para todo tipo de uso escolar y profesional.",
         "stock": int(product.stock or 0),
     }
 
@@ -523,13 +485,10 @@ def register(body: RegisterBody, db: Session = Depends(get_db)):
     if exists:
         raise HTTPException(status_code=400, detail="El email ya está registrado")
 
-    client = ClientModel(name=name, lastname="", email=email, telephone="0000000")
+    client = ClientModel(name=name, lastname="", email=email, telephone="0000000", password_hash=body.password)
     db.add(client)
     db.commit()
     db.refresh(client)
-
-    user_passwords[email] = body.password
-    save_user_passwords(user_passwords)
 
     return {
         "success": True,
@@ -561,8 +520,7 @@ def login(body: LoginBody, db: Session = Depends(get_db)):
     if not client:
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
 
-    saved_password = user_passwords.get(email)
-    if saved_password is not None and saved_password != body.password:
+    if client.password_hash and client.password_hash != body.password:
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
 
     return {
@@ -646,8 +604,16 @@ def reset_password(body: Dict[str, Any]):
     if not email:
         raise HTTPException(status_code=400, detail="Token inválido o expirado")
 
-    user_passwords[email] = new_password
-    save_user_passwords(user_passwords)
+    # Update password in DB
+    from config.database import SessionLocal
+    db = SessionLocal()
+    try:
+        client = db.query(ClientModel).filter(func.lower(ClientModel.email) == email).first()
+        if client:
+            client.password_hash = new_password
+            db.commit()
+    finally:
+        db.close()
 
     reset_tokens.pop(token, None)
     save_reset_tokens(reset_tokens)
@@ -919,17 +885,13 @@ def admin_create_product(body: ProductBody, db: Session = Depends(get_db), admin
             name=body.nombre,
             price=body.precio,
             stock=body.stock or 0,
+            image=body.imagen or PLACEHOLDER_IMAGE,
+            description=body.descripcion or f"Producto {body.nombre}",
             category_id=category.id_key,
         )
         db.add(product)
         db.commit()
         db.refresh(product)
-
-        product_media[str(product.id_key)] = {
-            "imagen": (body.imagen or PLACEHOLDER_IMAGE),
-            "descripcion": (body.descripcion or f"Producto {body.nombre}"),
-        }
-        save_product_media(product_media)
 
         product = db.query(ProductModel).options(joinedload(ProductModel.category)).filter(ProductModel.id_key == product.id_key).first()
 
@@ -957,16 +919,11 @@ def admin_update_product(id_key: str, body: ProductBody, db: Session = Depends(g
     product.name = body.nombre
     product.price = body.precio
     product.stock = body.stock or 0
+    product.image = body.imagen or product.image or PLACEHOLDER_IMAGE
+    product.description = body.descripcion or product.description or f"Producto {body.nombre}"
     product.category_id = category.id_key
 
     db.commit()
-
-    existing_media = product_media.get(str(pid), {})
-    product_media[str(pid)] = {
-        "imagen": body.imagen or existing_media.get("imagen") or PLACEHOLDER_IMAGE,
-        "descripcion": body.descripcion or existing_media.get("descripcion") or f"Producto {body.nombre}",
-    }
-    save_product_media(product_media)
 
     product = db.query(ProductModel).options(joinedload(ProductModel.category)).filter(ProductModel.id_key == pid).first()
 
@@ -986,9 +943,5 @@ def admin_delete_product(id_key: str, db: Session = Depends(get_db), admin_check
 
     db.delete(product)
     db.commit()
-
-    if str(pid) in product_media:
-        product_media.pop(str(pid), None)
-        save_product_media(product_media)
 
     return {"mensaje": "Producto eliminado"}

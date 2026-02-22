@@ -32,7 +32,9 @@ class ProductModel(BaseModel):
 
     name = Column(String, index=True)
     price = Column(Float, index=True)
-    stock = Column(Integer, default=0, nullable=False, index=True)  # ✅ Added index
+    stock = Column(Integer, default=0, nullable=False, index=True)
+    image = Column(String, nullable=True)  # URL de imagen (Cloudinary)
+    description = Column(String, nullable=True)  # Descripción del producto
     category_id = Column(Integer, ForeignKey('categories.id_key'), index=True)
 
     category = relationship(
