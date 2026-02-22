@@ -36,7 +36,7 @@ PLACEHOLDER_IMAGE = os.getenv(
 
 # Estado en memoria para MVP
 carts: Dict[str, List[Dict[str, Any]]] = {}
-favorites: Dict[str, List[Dict[str, Any]]] = load_favorites()
+favorites: Dict[str, List[Dict[str, Any]]] = {}
 bills: List[Dict[str, Any]] = []
 
 PASSWORDS_FILE = os.getenv(
@@ -141,6 +141,7 @@ def save_reset_tokens(tokens: Dict[str, Dict[str, Any]]):
 user_passwords: Dict[str, str] = load_user_passwords()
 reset_tokens: Dict[str, Dict[str, Any]] = load_reset_tokens()
 product_media: Dict[str, Dict[str, str]] = load_product_media()
+favorites = load_favorites()
 
 DEFAULT_PRODUCT_MEDIA = {
     "resma a4 autor 75g (500 hojas)": {
