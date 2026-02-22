@@ -36,7 +36,7 @@ PLACEHOLDER_IMAGE = os.getenv(
 
 # Estado en memoria para MVP
 carts: Dict[str, List[Dict[str, Any]]] = {}
-favorites: Dict[str, List[Dict[str, Any]]] = {}
+favorites: Dict[str, List[Dict[str, Any]]] = load_favorites()
 bills: List[Dict[str, Any]] = []
 
 PASSWORDS_FILE = os.getenv(
@@ -52,6 +52,11 @@ PRODUCT_MEDIA_FILE = os.getenv(
 RESET_TOKENS_FILE = os.getenv(
     "RESET_TOKENS_FILE",
     os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "reset_tokens.json")),
+)
+
+FAVORITES_FILE = os.getenv(
+    "FAVORITES_FILE",
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "favorites.json")),
 )
 
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
@@ -97,6 +102,23 @@ def save_product_media(media: Dict[str, Dict[str, str]]):
     os.makedirs(os.path.dirname(PRODUCT_MEDIA_FILE), exist_ok=True)
     with open(PRODUCT_MEDIA_FILE, "w", encoding="utf-8") as file:
         json.dump(media, file, ensure_ascii=False, indent=2)
+
+
+def load_favorites() -> Dict[str, List[Dict[str, Any]]]:
+    try:
+        if not os.path.exists(FAVORITES_FILE):
+            return {}
+        with open(FAVORITES_FILE, "r", encoding="utf-8") as file:
+            data = json.load(file)
+            return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_favorites(favs: Dict[str, List[Dict[str, Any]]]):
+    os.makedirs(os.path.dirname(FAVORITES_FILE), exist_ok=True)
+    with open(FAVORITES_FILE, "w", encoding="utf-8") as file:
+        json.dump(favs, file, ensure_ascii=False, indent=2)
 
 
 def load_reset_tokens() -> Dict[str, Dict[str, Any]]:
@@ -672,6 +694,7 @@ def add_favorite(email: str, body: Dict[str, Any]):
             "imagen": product.get("imagen", PLACEHOLDER_IMAGE),
             "categoria": product.get("categoria", "General"),
         })
+        save_favorites(favorites)
 
     return {"items": current}
 
@@ -680,6 +703,7 @@ def add_favorite(email: str, body: Dict[str, Any]):
 def remove_favorite(email: str, producto_id: str):
     current = favorites.setdefault(email, [])
     favorites[email] = [item for item in current if str(item.get("productoId")) != str(producto_id)]
+    save_favorites(favorites)
     return {"items": favorites[email]}
 
 
