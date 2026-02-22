@@ -900,27 +900,34 @@ def admin_upload_image(imagen: Optional[UploadFile] = File(default=None), admin_
 
 @router.post("/productos")
 def admin_create_product(body: ProductBody, db: Session = Depends(get_db), admin_check: None = Depends(verify_admin)):
-    category = get_or_create_category(db, body.categoria)
+    try:
+        category = get_or_create_category(db, body.categoria)
 
-    product = ProductModel(
-        name=body.nombre,
-        price=body.precio,
-        stock=body.stock or 0,
-        category_id=category.id_key,
-    )
-    db.add(product)
-    db.commit()
-    db.refresh(product)
+        product = ProductModel(
+            name=body.nombre,
+            price=body.precio,
+            stock=body.stock or 0,
+            category_id=category.id_key,
+        )
+        db.add(product)
+        db.commit()
+        db.refresh(product)
 
-    product_media[str(product.id_key)] = {
-        "imagen": (body.imagen or PLACEHOLDER_IMAGE),
-        "descripcion": (body.descripcion or f"Producto {body.nombre}"),
-    }
-    save_product_media(product_media)
+        product_media[str(product.id_key)] = {
+            "imagen": (body.imagen or PLACEHOLDER_IMAGE),
+            "descripcion": (body.descripcion or f"Producto {body.nombre}"),
+        }
+        save_product_media(product_media)
 
-    product = db.query(ProductModel).options(joinedload(ProductModel.category)).filter(ProductModel.id_key == product.id_key).first()
+        product = db.query(ProductModel).options(joinedload(ProductModel.category)).filter(ProductModel.id_key == product.id_key).first()
 
-    return {"mensaje": "Producto creado", "producto": to_product_json(product)}
+        return {"mensaje": "Producto creado", "producto": to_product_json(product)}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Error creando producto: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Error al crear producto: {str(exc)}")
 
 
 @router.put("/productos/{id_key}")

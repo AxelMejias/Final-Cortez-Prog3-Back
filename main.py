@@ -59,6 +59,15 @@ def create_fastapi_app() -> FastAPI:
             content={"message": str(exc)},
         )
 
+    @fastapi_app.exception_handler(Exception)
+    async def global_exception_handler(request, exc):
+        """Catch-all: ensures CORS headers are added even on 500 errors."""
+        logger.exception("Unhandled exception: %s", exc)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Error interno del servidor"},
+        )
+
     client_controller = ClientController()
     fastapi_app.include_router(client_controller.router, prefix="/clients")
 
