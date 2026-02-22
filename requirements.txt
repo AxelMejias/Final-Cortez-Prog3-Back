@@ -7,3 +7,4 @@ cloudinary==1.41.0
 requests==2.31.0
 email-validator==2.1.0
 starlette==0.27.0
+redis==5.0.1
