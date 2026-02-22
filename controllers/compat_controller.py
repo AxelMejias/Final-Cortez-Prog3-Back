@@ -239,6 +239,11 @@ def to_product_json(product: ProductModel) -> Dict[str, Any]:
 
 def get_or_create_category(db: Session, name: str) -> CategoryModel:
     normalized = name.strip()
+    # Try exact match first (handles accented chars that SQLite lower() can't)
+    category = db.query(CategoryModel).filter(CategoryModel.name == normalized).first()
+    if category:
+        return category
+    # Fallback: case-insensitive (works for ASCII)
     category = db.query(CategoryModel).filter(func.lower(CategoryModel.name) == normalized.lower()).first()
     if category:
         return category
