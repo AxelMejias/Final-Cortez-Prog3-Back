@@ -369,7 +369,14 @@ def list_productos(
     if q:
         query = query.filter(ProductModel.name.ilike(f"%{q}%"))
     if categoria:
-        query = query.filter(func.lower(CategoryModel.name) == categoria.lower())
+        # Exact match first (handles accented chars that SQLite lower() can't)
+        cat_filter = db.query(CategoryModel).filter(CategoryModel.name == categoria).first()
+        if not cat_filter:
+            cat_filter = db.query(CategoryModel).filter(func.lower(CategoryModel.name) == categoria.lower()).first()
+        if cat_filter:
+            query = query.filter(ProductModel.category_id == cat_filter.id_key)
+        else:
+            query = query.filter(ProductModel.category_id == -1)  # No match
     if precioMin is not None:
         query = query.filter(ProductModel.price >= precioMin)
     if precioMax is not None:
