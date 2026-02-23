@@ -633,8 +633,35 @@ def add_cart_item(email: str, body: Dict[str, Any]):
         raise HTTPException(status_code=400, detail="Producto inválido")
 
     current = carts.setdefault(email, [])
+    producto_id = str(item.get("id") or item.get("_id") or "")
+
+    # Buscar si ya existe en el carrito
+    for existing in current:
+        eid = str(existing.get("id") or existing.get("_id") or "")
+        if eid == producto_id and producto_id:
+            existing["cantidad"] = existing.get("cantidad", 1) + 1
+            return {"items": current}
+
+    # Nuevo: agregar con cantidad 1
+    item["cantidad"] = 1
     current.append(item)
     return {"items": current}
+
+
+@router.put("/carrito/{email}/item/{producto_id}/cantidad")
+def update_cart_quantity(email: str, producto_id: str, body: Dict[str, Any]):
+    cantidad = body.get("cantidad", 1)
+    if cantidad < 1:
+        raise HTTPException(status_code=400, detail="Cantidad mínima es 1")
+
+    current = carts.setdefault(email, [])
+    for item in current:
+        eid = str(item.get("id") or item.get("_id") or "")
+        if eid == producto_id:
+            item["cantidad"] = cantidad
+            return {"items": current}
+
+    raise HTTPException(status_code=404, detail="Producto no encontrado en carrito")
 
 
 @router.delete("/carrito/{email}/index/{index}")
