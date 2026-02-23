@@ -810,6 +810,35 @@ def create_bill(body: BillBody, db: Session = Depends(get_db)):
     )
 
     boleta = to_bill_json(order)
+
+    # Enviar email de confirmación via n8n
+    if N8N_WEBHOOK_URL:
+        productos_lista = []
+        for p in (body.productos or []):
+            productos_lista.append({
+                "nombre": p.get("nombre", ""),
+                "cantidad": int(p.get("cantidad", 1)),
+                "precio": float(p.get("precio", 0)),
+                "subtotal": float(p.get("precio", 0)) * int(p.get("cantidad", 1)),
+            })
+
+        webhook_payload = {
+            "tipo": "boleta",
+            "userEmail": email,
+            "userName": name,
+            "boletaId": boleta.get("id", ""),
+            "boletaNumero": boleta.get("billNumber", ""),
+            "fecha": boleta.get("fecha", ""),
+            "hora": boleta.get("hora", ""),
+            "productos": productos_lista,
+            "total": float(body.total or 0),
+            "estado": "Procesando",
+        }
+        try:
+            requests.post(N8N_WEBHOOK_URL, json=webhook_payload, timeout=15)
+        except Exception as exc:
+            logger.warning("N8N webhook (boleta) failed: %s", exc)
+
     return {"mensaje": "Boleta registrada", "boleta": boleta}
 
 
